@@ -18,23 +18,18 @@ domain.
 
 ### Value Object Base Classes
 
-ABP has two base classes for value objects: **ValueObject** and **ValueObject&lt;T&gt;** . Both classes override the equality operator (and other related operator and methods) to compare the two value objects and assume that they are identical if all the properties are the same. For example, all of these tests pass:
+ABP has a class for value objects: **ValueObject** . For example, all of these tests pass:
 
-```
+```csharp
 var address1 = new Address(new Guid("21C67A65-ED5A-4512-AA29-66308FAAB5AF"), "Baris Manco Street", 42);
 var address2 = new Address(new Guid("21C67A65-ED5A-4512-AA29-66308FAAB5AF"), "Baris Manco Street", 42);
 
-Assert.Equal(address1, address2);
-Assert.Equal(address1.GetHashCode(), address2.GetHashCode());
-Assert.True(address1 == address2);
-Assert.False(address1 != address2);
+Assert.True(address1.ValueEquals(address2));
+Assert.True(address2.ValueEquals(address1));
 ```
 
 Even if they are different objects in memory, they are identical for our domain.
 
-The difference between **ValueObject** and **ValueObject&lt;T&gt;** is the implementation of comparison. The **ValueObject&lt;T&gt;** uses reflection, while the **ValueObject** waits from you to return a list of properties.
-
-So, the **ValueObject&lt;T&gt;** is simpler to inherit, but the **ValueObject** is more efficient.
 
 #### ValueObject
 
@@ -68,33 +63,6 @@ public class Address : ValueObject
     }
 }
 ```
-
-#### **ValueObject&lt;T&gt;**
-
-Here's the same Address class that inherits from the **ValueObject&lt;T&gt;**.
-
-````csharp
-public class Address : ValueObject<Address>
-{
-    public Guid CityId { get; }
-
-    public string Street { get; }
-
-    public int Number { get; }
-
-    public AddressAnother(
-        Guid cityId,
-        string street,
-        int number)
-    {
-        CityId = cityId;
-        Street = street;
-        Number = number;
-    }
-}
-````
-
-
 
 ### Best Practices
 

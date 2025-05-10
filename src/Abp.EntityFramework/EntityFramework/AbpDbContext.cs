@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data.Common;
@@ -18,6 +18,8 @@ using Abp.Domain.Entities;
 using Abp.Domain.Entities.Auditing;
 using Abp.Domain.Repositories;
 using Abp.Domain.Uow;
+using Abp.EntityFramework.Uow;
+using Abp.EntityFramework.Utils;
 using Abp.Events.Bus;
 using Abp.Events.Bus.Entities;
 using Abp.Extensions;
@@ -31,7 +33,7 @@ namespace Abp.EntityFramework
     /// <summary>
     /// Base class for all DbContext classes in the application.
     /// </summary>
-    public abstract class AbpDbContext : DbContext, ITransientDependency, IShouldInitialize
+    public abstract class AbpDbContext : DbContext, ITransientDependency, IShouldInitialize, IShouldInitializeDcontext
     {
         /// <summary>
         /// Used to get current session values.
@@ -145,16 +147,15 @@ namespace Abp.EntityFramework
 
         private void RegisterToChanges()
         {
-            ((IObjectContextAdapter)this)
+            ((IObjectContextAdapter) this)
                 .ObjectContext
                 .ObjectStateManager
                 .ObjectStateManagerChanged += ObjectStateManager_ObjectStateManagerChanged;
         }
 
-        protected virtual void ObjectStateManager_ObjectStateManagerChanged(object sender,
-            System.ComponentModel.CollectionChangeEventArgs e)
+        protected virtual void ObjectStateManager_ObjectStateManagerChanged(object sender, CollectionChangeEventArgs e)
         {
-            var contextAdapter = (IObjectContextAdapter)this;
+            var contextAdapter = (IObjectContextAdapter) this;
             if (e.Action != CollectionChangeAction.Add)
             {
                 return;
@@ -168,9 +169,9 @@ namespace Abp.EntityFramework
                     CheckAndSetMustHaveTenantIdProperty(entry.Entity);
                     SetCreationAuditProperties(entry.Entity, GetAuditUserId());
                     break;
-                    //case EntityState.Deleted: //It's not going here at all
-                    //    SetDeletionAuditProperties(entry.Entity, GetAuditUserId());
-                    //    break;
+                //case EntityState.Deleted: //It's not going here at all
+                //    SetDeletionAuditProperties(entry.Entity, GetAuditUserId());
+                //    break;
             }
         }
 
@@ -202,8 +203,10 @@ namespace Abp.EntityFramework
         {
             modelBuilder.Filter(AbpDataFilters.SoftDelete, (ISoftDelete d) => d.IsDeleted, false);
             modelBuilder.Filter(AbpDataFilters.MustHaveTenant,
-                (IMustHaveTenant t, int tenantId) => t.TenantId == tenantId || (int?)t.TenantId == null,
-                0); //While "(int?)t.TenantId == null" seems wrong, it's needed. See https://github.com/jcachat/EntityFramework.DynamicFilters/issues/62#issuecomment-208198058
+#pragma warning disable CS0472 // The result of the expression is always the same since a value of this type is never equal to 'null'
+				(IMustHaveTenant t, int tenantId) => t.TenantId == tenantId || (int?) t.TenantId == null,
+#pragma warning restore CS0472 // While "(int?)t.TenantId == null" seems wrong, it's needed. See https://github.com/jcachat/EntityFramework.DynamicFilters/issues/62#issuecomment-208198058
+                0); 
             modelBuilder.Filter(AbpDataFilters.MayHaveTenant,
                 (IMayHaveTenant t, int? tenantId) => t.TenantId == tenantId, 0);
         }
@@ -254,6 +257,31 @@ namespace Abp.EntityFramework
             return changeReport;
         }
 
+        public virtual void Initialize(AbpEfDbContextInitializationContext initializationContext)
+        {
+            var uowOptions = initializationContext.UnitOfWork.Options;
+            if (uowOptions.Timeout.HasValue && !Database.CommandTimeout.HasValue)
+            {
+                Database.CommandTimeout = uowOptions.Timeout.Value.TotalSeconds.To<int>();
+            }
+
+            if (Clock.SupportsMultipleTimezone)
+            {
+                ((IObjectContextAdapter) this).ObjectContext.ObjectMaterialized += (sender, args) =>
+                {
+                    var entityType = ObjectContext.GetObjectType(args.Entity.GetType());
+
+                    Configuration.AutoDetectChangesEnabled = false;
+                    var previousState = Entry(args.Entity).State;
+
+                    DateTimePropertyInfoHelper.NormalizeDatePropertyKinds(args.Entity, entityType);
+
+                    Entry(args.Entity).State = previousState;
+                    Configuration.AutoDetectChangesEnabled = true;
+                };
+            }
+        }
+
         protected virtual void ApplyAbpConcepts(DbEntityEntry entry, long? userId, EntityChangeReport changeReport)
         {
             switch (entry.State)
@@ -272,7 +300,8 @@ namespace Abp.EntityFramework
             AddDomainEvents(changeReport.DomainEvents, entry.Entity);
         }
 
-        protected virtual void ApplyAbpConceptsForAddedEntity(DbEntityEntry entry, long? userId, EntityChangeReport changeReport)
+        protected virtual void ApplyAbpConceptsForAddedEntity(DbEntityEntry entry, long? userId,
+            EntityChangeReport changeReport)
         {
             CheckAndSetId(entry.Entity);
             CheckAndSetMustHaveTenantIdProperty(entry.Entity);
@@ -281,7 +310,8 @@ namespace Abp.EntityFramework
             changeReport.ChangedEntities.Add(new EntityChangeEntry(entry.Entity, EntityChangeType.Created));
         }
 
-        protected virtual void ApplyAbpConceptsForModifiedEntity(DbEntityEntry entry, long? userId, EntityChangeReport changeReport)
+        protected virtual void ApplyAbpConceptsForModifiedEntity(DbEntityEntry entry, long? userId,
+            EntityChangeReport changeReport)
         {
             SetModificationAuditProperties(entry.Entity, userId);
 
@@ -296,7 +326,8 @@ namespace Abp.EntityFramework
             }
         }
 
-        protected virtual void ApplyAbpConceptsForDeletedEntity(DbEntityEntry entry, long? userId, EntityChangeReport changeReport)
+        protected virtual void ApplyAbpConceptsForDeletedEntity(DbEntityEntry entry, long? userId,
+            EntityChangeReport changeReport)
         {
             if (IsHardDeleteEntity(entry))
             {
@@ -311,6 +342,11 @@ namespace Abp.EntityFramework
 
         protected virtual bool IsHardDeleteEntity(DbEntityEntry entry)
         {
+            if (!EntityHelper.IsEntity(entry.Entity.GetType()))
+            {
+                return false;
+            }
+
             if (CurrentUnitOfWorkProvider?.Current?.Items == null)
             {
                 return false;
@@ -370,9 +406,9 @@ namespace Abp.EntityFramework
 
         EdmProperty GetEdmProperty(Type type, string propertyName)
         {
-            var metadata = ((IObjectContextAdapter)this).ObjectContext.MetadataWorkspace;
+            var metadata = ((IObjectContextAdapter) this).ObjectContext.MetadataWorkspace;
 
-            var objectItemCollection = ((ObjectItemCollection)metadata.GetItemCollection(DataSpace.OSpace));
+            var objectItemCollection = ((ObjectItemCollection) metadata.GetItemCollection(DataSpace.OSpace));
 
             var entityType = metadata.GetItems<EntityType>(DataSpace.OSpace)
                 .Single(t => objectItemCollection.GetClrType(t) == type);
@@ -386,9 +422,9 @@ namespace Abp.EntityFramework
 
         string GetIdPropertyName(Type type)
         {
-            var metadata = ((IObjectContextAdapter)this).ObjectContext.MetadataWorkspace;
+            var metadata = ((IObjectContextAdapter) this).ObjectContext.MetadataWorkspace;
 
-            var objectItemCollection = ((ObjectItemCollection)metadata.GetItemCollection(DataSpace.OSpace));
+            var objectItemCollection = ((ObjectItemCollection) metadata.GetItemCollection(DataSpace.OSpace));
 
             var entityType = metadata.GetItems<EntityType>(DataSpace.OSpace)
                 .Single(t => objectItemCollection.GetClrType(t) == type);
@@ -485,14 +521,24 @@ namespace Abp.EntityFramework
 
         protected virtual void SetCreationAuditProperties(object entityAsObj, long? userId)
         {
-            EntityAuditingHelper.SetCreationAuditProperties(MultiTenancyConfig, entityAsObj, AbpSession.TenantId,
-                userId);
+            EntityAuditingHelper.SetCreationAuditProperties(
+                MultiTenancyConfig,
+                entityAsObj,
+                AbpSession.TenantId,
+                userId,
+                CurrentUnitOfWorkProvider?.Current?.AuditFieldConfiguration
+            );
         }
 
         protected virtual void SetModificationAuditProperties(object entityAsObj, long? userId)
         {
-            EntityAuditingHelper.SetModificationAuditProperties(MultiTenancyConfig, entityAsObj, AbpSession.TenantId,
-                userId);
+            EntityAuditingHelper.SetModificationAuditProperties(
+                MultiTenancyConfig,
+                entityAsObj,
+                AbpSession.TenantId,
+                userId,
+                CurrentUnitOfWorkProvider?.Current?.AuditFieldConfiguration
+            );
         }
 
         protected virtual void CancelDeletionForSoftDelete(DbEntityEntry entry)
@@ -510,50 +556,13 @@ namespace Abp.EntityFramework
 
         protected virtual void SetDeletionAuditProperties(object entityAsObj, long? userId)
         {
-            if (entityAsObj is IHasDeletionTime)
-            {
-                var entity = entityAsObj.As<IHasDeletionTime>();
-
-                if (entity.DeletionTime == null)
-                {
-                    entity.DeletionTime = Clock.Now;
-                }
-            }
-
-            if (entityAsObj is IDeletionAudited)
-            {
-                var entity = entityAsObj.As<IDeletionAudited>();
-
-                if (entity.DeleterUserId != null)
-                {
-                    return;
-                }
-
-                if (userId == null)
-                {
-                    entity.DeleterUserId = null;
-                    return;
-                }
-
-                //Special check for multi-tenant entities
-                if (entity is IMayHaveTenant || entity is IMustHaveTenant)
-                {
-                    //Sets LastModifierUserId only if current user is in same tenant/host with the given entity
-                    if ((entity is IMayHaveTenant && entity.As<IMayHaveTenant>().TenantId == AbpSession.TenantId) ||
-                        (entity is IMustHaveTenant && entity.As<IMustHaveTenant>().TenantId == AbpSession.TenantId))
-                    {
-                        entity.DeleterUserId = userId;
-                    }
-                    else
-                    {
-                        entity.DeleterUserId = null;
-                    }
-                }
-                else
-                {
-                    entity.DeleterUserId = userId;
-                }
-            }
+            EntityAuditingHelper.SetDeletionAuditProperties(
+                MultiTenancyConfig,
+                entityAsObj,
+                AbpSession.TenantId,
+                userId,
+                CurrentUnitOfWorkProvider?.Current?.AuditFieldConfiguration
+            );
         }
 
         protected virtual void LogDbEntityValidationException(DbEntityValidationException exception)

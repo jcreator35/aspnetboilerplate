@@ -13,8 +13,9 @@ project.lock.json
 
 # Nuget packages
 nupkg/*.nupkg
+nupkg/*.snupkg
 nupkg/push.bat
-nupkg/push_packages.ps1
+nupkg/push.ps1
 
 # Profile images
 ProfileImages/
@@ -131,3 +132,6 @@ src/.vs/config/applicationhost.config
 !SQLite.Interop.dll
 /tools
 nupkg/push-hikalkan.bat
+
+# Nuke Test Results
+output/test-results/*

@@ -27,7 +27,7 @@ namespace Abp.Auditing
         /// <summary>
         /// Maximum length of <see cref="Parameters"/> property.
         /// </summary>
-        public static int MaxParametersLength = 1024;
+        public static int MaxParametersLength = 4096;
 
         /// <summary>
         /// Maximum length of <see cref="ReturnValue"/> property.
@@ -48,6 +48,11 @@ namespace Abp.Auditing
         /// Maximum length of <see cref="BrowserInfo"/> property.
         /// </summary>
         public static int MaxBrowserInfoLength = 512;
+
+        /// <summary>
+        /// Maximum length of <see cref="ExceptionMessage"/> property.
+        /// </summary>
+        public static int MaxExceptionMessageLength = 1024;
 
         /// <summary>
         /// Maximum length of <see cref="Exception"/> property.
@@ -115,6 +120,11 @@ namespace Abp.Auditing
         public virtual string BrowserInfo { get; set; }
 
         /// <summary>
+        /// Store the message content of  <see cref="Exception"/>.
+        /// </summary>
+        public virtual string ExceptionMessage { get; set; }
+
+        /// <summary>
         /// Exception object, if an exception occured during execution of the method.
         /// </summary>
         public virtual string Exception { get; set; }
@@ -135,31 +145,32 @@ namespace Abp.Auditing
         public virtual string CustomData { get; set; }
 
         /// <summary>
-        /// Creates a new CreateFromAuditInfo from given <see cref="auditInfo"/>.
+        /// Creates a new CreateFromAuditInfo from given <paramref name="auditInfo"/>.
         /// </summary>
         /// <param name="auditInfo">Source <see cref="AuditInfo"/> object</param>
-        /// <returns>The <see cref="AuditLog"/> object that is created using <see cref="auditInfo"/></returns>
+        /// <returns>The <see cref="AuditLog"/> object that is created using <paramref name="auditInfo"/></returns>
         public static AuditLog CreateFromAuditInfo(AuditInfo auditInfo)
         {
             var exceptionMessage = GetAbpClearException(auditInfo.Exception);
             return new AuditLog
-                   {
-                       TenantId = auditInfo.TenantId,
-                       UserId = auditInfo.UserId,
-                       ServiceName = auditInfo.ServiceName.TruncateWithPostfix(MaxServiceNameLength),
-                       MethodName = auditInfo.MethodName.TruncateWithPostfix(MaxMethodNameLength),
-                       Parameters = auditInfo.Parameters.TruncateWithPostfix(MaxParametersLength),
-                       ReturnValue = auditInfo.ReturnValue.TruncateWithPostfix(MaxReturnValueLength),
-                       ExecutionTime = auditInfo.ExecutionTime,
-                       ExecutionDuration = auditInfo.ExecutionDuration,
-                       ClientIpAddress = auditInfo.ClientIpAddress.TruncateWithPostfix(MaxClientIpAddressLength),
-                       ClientName = auditInfo.ClientName.TruncateWithPostfix(MaxClientNameLength),
-                       BrowserInfo = auditInfo.BrowserInfo.TruncateWithPostfix(MaxBrowserInfoLength),
-                       Exception = exceptionMessage.TruncateWithPostfix(MaxExceptionLength),
-                       ImpersonatorUserId = auditInfo.ImpersonatorUserId,
-                       ImpersonatorTenantId = auditInfo.ImpersonatorTenantId,
-                       CustomData = auditInfo.CustomData.TruncateWithPostfix(MaxCustomDataLength)
-                   };
+            {
+                TenantId = auditInfo.TenantId,
+                UserId = auditInfo.UserId,
+                ServiceName = auditInfo.ServiceName.TruncateWithPostfix(MaxServiceNameLength),
+                MethodName = auditInfo.MethodName.TruncateWithPostfix(MaxMethodNameLength),
+                Parameters = auditInfo.Parameters.TruncateWithPostfix(MaxParametersLength),
+                ReturnValue = auditInfo.ReturnValue.TruncateWithPostfix(MaxReturnValueLength),
+                ExecutionTime = auditInfo.ExecutionTime,
+                ExecutionDuration = auditInfo.ExecutionDuration,
+                ClientIpAddress = auditInfo.ClientIpAddress.TruncateWithPostfix(MaxClientIpAddressLength),
+                ClientName = auditInfo.ClientName.TruncateWithPostfix(MaxClientNameLength),
+                BrowserInfo = auditInfo.BrowserInfo.TruncateWithPostfix(MaxBrowserInfoLength),
+                Exception = exceptionMessage.TruncateWithPostfix(MaxExceptionLength),
+                ExceptionMessage = auditInfo.Exception?.Message.TruncateWithPostfix(MaxExceptionMessageLength),
+                ImpersonatorUserId = auditInfo.ImpersonatorUserId,
+                ImpersonatorTenantId = auditInfo.ImpersonatorTenantId,
+                CustomData = auditInfo.CustomData.TruncateWithPostfix(MaxCustomDataLength)
+            };
         }
 
         public override string ToString()
@@ -167,7 +178,7 @@ namespace Abp.Auditing
             return string.Format(
                 "AUDIT LOG: {0}.{1} is executed by user {2} in {3} ms from {4} IP address.",
                 ServiceName, MethodName, UserId, ExecutionDuration, ClientIpAddress
-                );
+            );
         }
 
         /// <summary>
@@ -185,7 +196,7 @@ namespace Abp.Auditing
 
                 case AbpValidationException abpValidationException:
                     clearMessage = "There are " + abpValidationException.ValidationErrors.Count + " validation errors:";
-                    foreach (var validationResult in abpValidationException.ValidationErrors) 
+                    foreach (var validationResult in abpValidationException.ValidationErrors)
                     {
                         var memberNames = "";
                         if (validationResult.MemberNames != null && validationResult.MemberNames.Any())
@@ -195,6 +206,7 @@ namespace Abp.Auditing
 
                         clearMessage += "\r\n" + validationResult.ErrorMessage + memberNames;
                     }
+
                     break;
 
                 case UserFriendlyException userFriendlyException:

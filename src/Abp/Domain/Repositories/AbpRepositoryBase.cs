@@ -2,13 +2,14 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Linq.Expressions;
+using System.Threading;
 using System.Threading.Tasks;
 using Abp.Dependency;
 using Abp.Domain.Entities;
 using Abp.Domain.Uow;
 using Abp.MultiTenancy;
-using Abp.Reflection;
 using Abp.Reflection.Extensions;
+using Abp.Threading;
 
 namespace Abp.Domain.Repositories
 {
@@ -29,6 +30,7 @@ namespace Abp.Domain.Repositories
         public IUnitOfWorkManager UnitOfWorkManager { get; set; }
 
         public IIocResolver IocResolver { get; set; }
+        public ICancellationTokenProvider CancellationTokenProvider { get; set; }
 
         static AbpRepositoryBase()
         {
@@ -39,11 +41,42 @@ namespace Abp.Domain.Repositories
             }
         }
 
+        protected AbpRepositoryBase()
+        {
+            CancellationTokenProvider = NullCancellationTokenProvider.Instance;
+        }
+
         public abstract IQueryable<TEntity> GetAll();
+
+        public virtual IQueryable<TEntity> GetAllReadonly()
+        {
+            return GetAll();
+        }
+
+        public abstract Task<IQueryable<TEntity>> GetAllAsync();
+        public virtual Task<IQueryable<TEntity>> GetAllReadonlyAsync()
+        {
+            return Task.FromResult(GetAllReadonly());
+        }
 
         public virtual IQueryable<TEntity> GetAllIncluding(params Expression<Func<TEntity, object>>[] propertySelectors)
         {
             return GetAll();
+        }
+
+        public virtual IQueryable<TEntity> GetAllReadonlyIncluding(params Expression<Func<TEntity, object>>[] propertySelectors)
+        {
+            return GetAllReadonly();
+        }
+
+        public virtual Task<IQueryable<TEntity>> GetAllIncludingAsync(params Expression<Func<TEntity, object>>[] propertySelectors)
+        {
+            return GetAllAsync();
+        }
+        
+        public virtual Task<IQueryable<TEntity>> GetAllReadonlyIncludingAsync(params Expression<Func<TEntity, object>>[] propertySelectors)
+        {
+            return GetAllReadonlyAsync();
         }
 
         public virtual List<TEntity> GetAllList()
@@ -228,7 +261,7 @@ namespace Abp.Domain.Repositories
 
         public virtual int Count()
         {
-            return GetAll().Count();
+            return GetAllReadonly().Count();
         }
 
         public virtual Task<int> CountAsync()
@@ -238,7 +271,7 @@ namespace Abp.Domain.Repositories
 
         public virtual int Count(Expression<Func<TEntity, bool>> predicate)
         {
-            return GetAll().Count(predicate);
+            return GetAllReadonly().Count(predicate);
         }
 
         public virtual Task<int> CountAsync(Expression<Func<TEntity, bool>> predicate)
@@ -248,7 +281,7 @@ namespace Abp.Domain.Repositories
 
         public virtual long LongCount()
         {
-            return GetAll().LongCount();
+            return GetAllReadonly().LongCount();
         }
 
         public virtual Task<long> LongCountAsync()
@@ -258,7 +291,7 @@ namespace Abp.Domain.Repositories
 
         public virtual long LongCount(Expression<Func<TEntity, bool>> predicate)
         {
-            return GetAll().LongCount(predicate);
+            return GetAllReadonly().LongCount(predicate);
         }
 
         public virtual Task<long> LongCountAsync(Expression<Func<TEntity, bool>> predicate)

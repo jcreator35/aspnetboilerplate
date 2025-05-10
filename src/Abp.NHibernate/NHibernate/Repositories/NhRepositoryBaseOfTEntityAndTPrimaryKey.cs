@@ -6,6 +6,7 @@ using NHibernate.Linq;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Linq.Dynamic.Core;
 using System.Linq.Expressions;
 using System.Threading.Tasks;
 
@@ -40,6 +41,16 @@ namespace Abp.NHibernate.Repositories
             return Session.Query<TEntity>();
         }
 
+        public override IQueryable<TEntity> GetAllReadonly()
+        {
+            return GetAll().WithOptions(o => o.SetReadOnly(true));
+        }
+
+        public override Task<IQueryable<TEntity>> GetAllAsync()
+        {
+            return Task.FromResult(Session.Query<TEntity>());
+        }
+
         public override IQueryable<TEntity> GetAllIncluding(params Expression<Func<TEntity, object>>[] propertySelectors)
         {
             if (propertySelectors.IsNullOrEmpty())
@@ -57,40 +68,90 @@ namespace Abp.NHibernate.Repositories
 
             return query;
         }
+        
+        public override IQueryable<TEntity> GetAllReadonlyIncluding(params Expression<Func<TEntity, object>>[] propertySelectors)
+        {
+            if (propertySelectors.IsNullOrEmpty())
+            {
+                return GetAllReadonly();
+            }
+
+            var query = GetAllReadonly();
+
+            foreach (var propertySelector in propertySelectors)
+            {
+                //TODO: Test if NHibernate supports multiple fetch.
+                query = query.Fetch(propertySelector);
+            }
+
+            return query;
+        }
+
+        public override async Task<IQueryable<TEntity>> GetAllReadonlyIncludingAsync(params Expression<Func<TEntity, object>>[] propertySelectors)
+        {
+            if (propertySelectors.IsNullOrEmpty())
+            {
+                return await GetAllReadonlyAsync();
+            }
+
+            var query = await GetAllReadonlyAsync();
+
+            foreach (var propertySelector in propertySelectors)
+            {
+                //TODO: Test if NHibernate supports multiple fetch.
+                query = query.Fetch(propertySelector);
+            }
+
+            return query;
+        }
 
         public override Task<List<TEntity>> GetAllListAsync()
         {
-            return GetAll().ToListAsync();
+            return GetAll().ToListAsync(CancellationTokenProvider.Token);
         }
 
         public override Task<List<TEntity>> GetAllListAsync(Expression<Func<TEntity, bool>> predicate)
         {
-            return GetAll().Where(predicate).ToListAsync();
+            return GetAll().Where(predicate).ToListAsync(CancellationTokenProvider.Token);
         }
 
         public override Task<TEntity> SingleAsync(Expression<Func<TEntity, bool>> predicate)
         {
-            return GetAll().SingleAsync(predicate);
+            return GetAll().SingleAsync(predicate, CancellationTokenProvider.Token);
         }
 
         public override TEntity FirstOrDefault(TPrimaryKey id)
         {
+            var entityType = typeof(TEntity);
+
+            if (typeof(ISoftDelete).IsAssignableFrom(entityType) ||
+                typeof(IMayHaveTenant).IsAssignableFrom(entityType) ||
+                typeof(IMustHaveTenant).IsAssignableFrom(entityType))
+            {
+                return GetAll().SingleOrDefault(CreateEqualityExpressionForId(id));
+            }
+
             return Session.Get<TEntity>(id);
         }
 
         public override Task<TEntity> FirstOrDefaultAsync(TPrimaryKey id)
         {
-            return Session.GetAsync<TEntity>(id);
+            var entityType = typeof(TEntity);
+
+            if (typeof(ISoftDelete).IsAssignableFrom(entityType) ||
+                typeof(IMayHaveTenant).IsAssignableFrom(entityType) ||
+                typeof(IMustHaveTenant).IsAssignableFrom(entityType))
+            {
+                return GetAll().SingleOrDefaultAsync(CreateEqualityExpressionForId(id), CancellationTokenProvider.Token);
+            }
+
+            return Session.GetAsync<TEntity>(id, CancellationTokenProvider.Token);
         }
 
         public override async Task<TEntity> FirstOrDefaultAsync(Expression<Func<TEntity, bool>> predicate)
         {
-            return await GetAll().FirstOrDefaultAsync(predicate);
-        }
-
-        public override TEntity Load(TPrimaryKey id)
-        {
-            return Session.Load<TEntity>(id);
+            var query = await GetAllAsync();
+            return await query.FirstOrDefaultAsync(predicate, CancellationTokenProvider.Token);
         }
 
         public override TEntity Insert(TEntity entity)
@@ -101,7 +162,7 @@ namespace Abp.NHibernate.Repositories
 
         public override async Task<TEntity> InsertAsync(TEntity entity)
         {
-            await Session.SaveAsync(entity);
+            await Session.SaveAsync(entity, CancellationTokenProvider.Token);
             return entity;
         }
 
@@ -113,7 +174,7 @@ namespace Abp.NHibernate.Repositories
 
         public override async Task<TEntity> InsertOrUpdateAsync(TEntity entity)
         {
-            await Session.SaveOrUpdateAsync(entity);
+            await Session.SaveOrUpdateAsync(entity, CancellationTokenProvider.Token);
             return entity;
         }
 
@@ -125,21 +186,13 @@ namespace Abp.NHibernate.Repositories
 
         public override async Task<TEntity> UpdateAsync(TEntity entity)
         {
-            await Session.UpdateAsync(entity);
+            await Session.UpdateAsync(entity, CancellationTokenProvider.Token);
             return entity;
         }
 
         public override void Delete(TEntity entity)
         {
-            if (entity is ISoftDelete softDeleteEntity)
-            {
-                softDeleteEntity.IsDeleted = true;
-                Update(entity);
-            }
-            else
-            {
-                Session.Delete(entity);
-            }
+            Session.Delete(entity);
         }
 
         public override void Delete(TPrimaryKey id)
@@ -151,15 +204,7 @@ namespace Abp.NHibernate.Repositories
 
         public override async Task DeleteAsync(TEntity entity)
         {
-            if (entity is ISoftDelete softDeleteEntity)
-            {
-                softDeleteEntity.IsDeleted = true;
-                await UpdateAsync(entity);
-            }
-            else
-            {
-                await Session.DeleteAsync(entity);
-            }
+            await Session.DeleteAsync(entity, CancellationTokenProvider.Token);
         }
 
         public override async Task DeleteAsync(TPrimaryKey id)
@@ -181,22 +226,22 @@ namespace Abp.NHibernate.Repositories
 
         public override Task<int> CountAsync()
         {
-            return GetAll().CountAsync();
+            return GetAll().CountAsync(CancellationTokenProvider.Token);
         }
 
         public override Task<int> CountAsync(Expression<Func<TEntity, bool>> predicate)
         {
-            return GetAll().CountAsync(predicate);
+            return GetAll().CountAsync(predicate, CancellationTokenProvider.Token);
         }
 
         public override Task<long> LongCountAsync()
         {
-            return GetAll().LongCountAsync();
+            return GetAll().LongCountAsync(CancellationTokenProvider.Token);
         }
 
         public override Task<long> LongCountAsync(Expression<Func<TEntity, bool>> predicate)
         {
-            return GetAll().LongCountAsync(predicate);
+            return GetAll().LongCountAsync(predicate, CancellationTokenProvider.Token);
         }
     }
 }

@@ -94,11 +94,9 @@ In some cases like editing a multi lingual entity on the UI, all translations ma
 	public class ProductTranslationDto
 	{
 	    public string Name { get; set; }
-
+	    
 	    public string Language { get; set; }
 	}
-
-
 
 CreateMultiLingualMap extension method returns an object of type CreateMultiLingualMapResult which contains **EntityMap** and  **TranslationMap** fields. These fields can be used to customize multi lingual mapping. A sample usage would be;
 
@@ -106,6 +104,12 @@ CreateMultiLingualMap extension method returns an object of type CreateMultiLing
 configuration.CreateMultiLingualMap<Order, OrderTranslation, OrderListDto>(context)
     .EntityMap.ForMember(dest => dest.ProductCount, opt => opt.MapFrom(src => src.Products.Count));
 ```
+
+CreateMultiLingualMap also allows you to define type of the id field of main and translation entities as well;
+
+````c#
+configuration.CreateMultiLingualMap<Order, int, OrderTranslation, long, OrderListDto>(context, true);
+````
 
 ### Crud Operations
 

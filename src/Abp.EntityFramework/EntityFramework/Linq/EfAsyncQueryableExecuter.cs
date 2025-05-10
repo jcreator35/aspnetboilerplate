@@ -1,42 +1,50 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Data.Entity;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Abp.Dependency;
 using Abp.Linq;
+using Abp.Threading;
 
 namespace Abp.EntityFramework.Linq
 {
     public class EfAsyncQueryableExecuter : IAsyncQueryableExecuter, ISingletonDependency
     {
-        public Task<int> CountAsync<T>(IQueryable<T> queryable)
+        private readonly ICancellationTokenProvider _cancellationTokenProvider;
+
+        public EfAsyncQueryableExecuter(ICancellationTokenProvider cancellationTokenProvider)
         {
-            return queryable.CountAsync();
+            _cancellationTokenProvider = cancellationTokenProvider;
         }
 
-        public int Count<T>(IQueryable<T> queryable)
+        public Task<int> CountAsync<T>(IQueryable<T> queryable, CancellationToken cancellationToken = default)
         {
-            return queryable.Count();
+            return ExecuteAsync(queryable, (q, token) => q.CountAsync(token), cancellationToken);
         }
 
-        public Task<List<T>> ToListAsync<T>(IQueryable<T> queryable)
+        public Task<List<T>> ToListAsync<T>(IQueryable<T> queryable, CancellationToken cancellationToken = default)
         {
-            return queryable.ToListAsync();
+            return ExecuteAsync(queryable, (q, token) => q.ToListAsync(token), cancellationToken);
         }
 
-        public List<T> ToList<T>(IQueryable<T> queryable)
+        public Task<T> FirstOrDefaultAsync<T>(IQueryable<T> queryable, CancellationToken cancellationToken = default)
         {
-            return queryable.ToList();
+            return ExecuteAsync(queryable, (q, token) => q.FirstOrDefaultAsync(token), cancellationToken);
         }
 
-        public Task<T> FirstOrDefaultAsync<T>(IQueryable<T> queryable)
+        public Task<bool> AnyAsync<T>(IQueryable<T> queryable, CancellationToken cancellationToken = default)
         {
-            return queryable.FirstOrDefaultAsync();
+            return ExecuteAsync(queryable, (q, token) => q.AnyAsync(token), cancellationToken);
         }
 
-        public T FirstOrDefault<T>(IQueryable<T> queryable)
+        private async Task<TResult> ExecuteAsync<T, TResult>(IQueryable<T> queryable,
+            Func<IQueryable<T>, CancellationToken, Task<TResult>> executeMethod,
+            CancellationToken cancellationToken = default)
         {
-            return queryable.FirstOrDefault();
+            cancellationToken = _cancellationTokenProvider.FallbackToProvider(cancellationToken);
+            return await executeMethod(queryable, cancellationToken).ConfigureAwait(false);
         }
     }
 }

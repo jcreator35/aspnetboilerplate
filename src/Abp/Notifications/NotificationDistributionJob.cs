@@ -1,15 +1,16 @@
-﻿using Abp.BackgroundJobs;
+﻿using System.Threading.Tasks;
+using Abp.BackgroundJobs;
 using Abp.Dependency;
-using Abp.Threading;
 
 namespace Abp.Notifications
 {
     /// <summary>
     /// This background job distributes notifications to users.
     /// </summary>
-    public class NotificationDistributionJob : BackgroundJob<NotificationDistributionJobArgs>, ITransientDependency
+    public class NotificationDistributionJob : IAsyncBackgroundJob<NotificationDistributionJobArgs>, ITransientDependency
     {
         private readonly INotificationConfiguration _notificationConfiguration;
+        private readonly INotificationDistributer _notificationDistributer;
         private readonly IIocResolver _iocResolver;
 
         /// <summary>
@@ -17,21 +18,17 @@ namespace Abp.Notifications
         /// </summary>
         public NotificationDistributionJob(
             INotificationConfiguration notificationConfiguration,
-            IIocResolver iocResolver)
+            IIocResolver iocResolver, 
+            INotificationDistributer notificationDistributer)
         {
             _notificationConfiguration = notificationConfiguration;
             _iocResolver = iocResolver;
+            _notificationDistributer = notificationDistributer;
         }
 
-        public override void Execute(NotificationDistributionJobArgs args)
+        public async Task ExecuteAsync(NotificationDistributionJobArgs args)
         {
-            foreach (var notificationDistributorType in _notificationConfiguration.Distributers)
-            {
-                using (var notificationDistributer = _iocResolver.ResolveAsDisposable<INotificationDistributer>(notificationDistributorType))
-                {
-                    notificationDistributer.Object.Distribute(args.NotificationId);
-                }
-            }
+            await _notificationDistributer.DistributeAsync(args.NotificationId);
         }
     }
 }
